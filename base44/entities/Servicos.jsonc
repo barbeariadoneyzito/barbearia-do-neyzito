@@ -1,0 +1,43 @@
+{
+  "name": "Servicos",
+  "type": "object",
+  "properties": {
+    "nome": {
+      "type": "string"
+    },
+    "preco": {
+      "type": "number"
+    },
+    "duracao_minutos": {
+      "type": "number"
+    },
+    "descricao": {
+      "type": "string"
+    },
+    "ativo": {
+      "type": "boolean",
+      "default": true
+    }
+  },
+  "required": [
+    "nome"
+  ],
+  "rls": {
+    "read": {},
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

@@ -1,0 +1,169 @@
+{
+  "name": "Leads",
+  "type": "object",
+  "properties": {
+    "nome": {
+      "type": "string"
+    },
+    "whatsapp": {
+      "type": "string"
+    },
+    "email": {
+      "type": "string"
+    },
+    "servico_interesse": {
+      "type": "string"
+    },
+    "barbeiro_preferido": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "default": "novo"
+    },
+    "origem": {
+      "type": "string",
+      "enum": [
+        "Google Pesquisa",
+        "Google Meu Neg\u00f3cio",
+        "Instagram",
+        "Facebook",
+        "TikTok",
+        "LinkedIn",
+        "WhatsApp Business",
+        "AppBarber",
+        "Plataforma de IA",
+        "Indica\u00e7\u00e3o de cliente",
+        "Acesso direto",
+        "Outro",
+        "N\u00e3o identificado"
+      ],
+      "default": "N\u00e3o identificado"
+    },
+    "canal": {
+      "type": "string"
+    },
+    "campanha": {
+      "type": "string"
+    },
+    "referrer": {
+      "type": "string",
+      "description": "P\u00e1gina/origem de onde o visitante chegou antes de entrar no site (document.referrer), usada para identificar a origem quando n\u00e3o h\u00e1 UTM (ex.: Google Meu Neg\u00f3cio, plataformas de IA, redes sociais)."
+    },
+    "observacoes": {
+      "type": "string"
+    },
+    "visualizado": {
+      "type": "boolean",
+      "default": false
+    },
+    "tipo_cliente": {
+      "type": "string",
+      "enum": [
+        "Cliente novo",
+        "J\u00e1 \u00e9 cliente",
+        "N\u00e3o identificado"
+      ],
+      "default": "N\u00e3o identificado"
+    },
+    "primeiro_contato": {
+      "type": "string"
+    },
+    "ultimo_atendimento": {
+      "type": "string"
+    },
+    "ultimo_interacao": {
+      "type": "string"
+    },
+    "data_agendamento": {
+      "type": "string"
+    },
+    "situacao_atendimento": {
+      "type": "string",
+      "enum": [
+        "pendente",
+        "confirmado",
+        "compareceu",
+        "faltou",
+        "cancelado",
+        "reagendado"
+      ]
+    },
+    "id_externo": {
+      "type": "string"
+    },
+    "responsavel_atendimento": {
+      "type": "string"
+    },
+    "consentimento_marketing": {
+      "type": "boolean"
+    },
+    "consentimento_data": {
+      "type": "string"
+    },
+    "consentimento_origem": {
+      "type": "string"
+    },
+    "consentimento_finalidade": {
+      "type": "string"
+    },
+    "preferencia_contato": {
+      "type": "string",
+      "enum": [
+        "whatsapp",
+        "telefone",
+        "email"
+      ]
+    },
+    "descadastrado": {
+      "type": "boolean",
+      "default": false
+    },
+    "utm_source": {
+      "type": "string"
+    },
+    "utm_medium": {
+      "type": "string"
+    },
+    "utm_campaign": {
+      "type": "string"
+    },
+    "pagina_entrada": {
+      "type": "string"
+    },
+    "sessao_id": {
+      "type": "string",
+      "description": "Identificador de sess\u00e3o an\u00f4nima (localStorage) que vincula o lead \u00e0 jornada de cliques/visitas na landing page, permitindo ver o caminho percorrido."
+    },
+    "preco_servico": {
+      "type": "number",
+      "description": "Pre\u00e7o do servi\u00e7o no momento da captura do lead (usado para calcular o rendimento por barbeiro no painel)."
+    }
+  },
+  "required": [
+    "nome",
+    "whatsapp"
+  ],
+  "rls": {
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "read": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}
