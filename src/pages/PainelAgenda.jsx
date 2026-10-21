@@ -63,7 +63,7 @@ export default function PainelAgenda() {
     setError(null);
     try {
       const [leadsPage, servicosPage] = await Promise.all([
-        base44.entities.Leads.list("-created_date", 1000),
+        base44.entities.Leads.list("-created_date", 2000),
         base44.entities.Servicos.filter({ ativo: true }, { sort: "nome", limit: 100 }).catch(() => ({ items: [] })),
       ]);
       const mapa = {};
