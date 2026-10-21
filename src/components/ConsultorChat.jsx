@@ -60,6 +60,61 @@ function textoExibido(content) {
   return txt.replace(BLOCOS_INTERNOS, "");
 }
 
+// Resposta de "sem informação" — a pergunta do cliente saiu do escopo do que
+// a barbearia tem cadastrado. A regra 16 do agente define o formato (uma
+// frase curta, objetiva e profissional). Aqui é só a rede de segurança: se o
+// modelo escapar e vier com chamada de agendamento, a chamada é removida e o
+// botão não aparece.
+const SEM_INFORMACAO =
+  /essa informação (eu )?não (tenho|possuo)|não (eu )?(tenho|possuo|temos) (dessa |essa |esta )?informa|informação (dessa |essa |esta )?(que )?(eu )?não (tenho|possuo)/i;
+
+function semInformacao(raw) {
+  return SEM_INFORMACAO.test(raw || "");
+}
+
+// Frases que empurram o agendamento e não têm sentido numa resposta de
+// "sem informação".
+const CHAMADA_AGENDAMENTO =
+  /se (quer|você quiser|precisar) (marcar|agendar|reservar)|é só clicar no botão|clique no botão|clique abaixo|vamos marcar|quer agendar|posso te ajudar com mais outra coisa|posso te ajudar com mais alguma coisa/i;
+
+const RESPOSTA_PADRAO_SEM_INFO =
+  "Essa informação eu não tenho. Posso informar sobre serviços, horários e a equipe.";
+
+// Divide em frases sem depender de lookbehind (compatibilidade com navegadores
+// mais antigos).
+function dividirFrases(texto) {
+  return (texto || "")
+    .split(/\n+/)
+    .flatMap((bloco) => bloco.match(/[^.!?…]+[.!?…]*/g) || []);
+}
+
+// Resposta "degradada": o modelo não disse nada além de oferecimento genérico
+// ("posso te ajudar com mais alguma coisa?"). Não é resposta de conteúdo, então
+// entra no mesmo tratamento de fora do escopo.
+function somenteOfertaGenerica(raw) {
+  const texto = (raw || "").replace(/\[\[AGENDAR[^\]]*\]\]/g, "");
+  const frases = dividirFrases(texto).filter((f) => f.trim().length > 0);
+  if (!frases.length) return false;
+  return frases.every((f) =>
+    /posso te ajudar com mais (alguma coisa|outra coisa|dúvida|pergunta)|em que posso ajudar/i.test(
+      f
+    )
+  );
+}
+
+function limparForaDoEscopo(texto) {
+  const mantidas = dividirFrases(texto).filter(
+    (f) => !CHAMADA_AGENDAMENTO.test(f)
+  );
+  if (!mantidas.length) return RESPOSTA_PADRAO_SEM_INFO;
+  return mantidas
+    .join(" ")
+    .replace(/\s*no momento\b/gi, "")
+    .replace(/[\u2190-\u21FF\u261D\u27A1\u2B00-\u2B07\u{1F446}-\u{1F449}\u{1F44D}]/gu, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
 // Limpa as mensagens do servidor uma única vez, ao recebê-las.
 function mensagensExibiveis(lista) {
   return (lista || []).map((m) => {
@@ -318,17 +373,25 @@ export default function ConsultorChat() {
                 );
               const barberMatch = !isUser ? raw.match(/\[\[AGENDAR:barber=([^\]]+)\]\]/) : null;
               const barber = barberMatch ? barberMatch[1].trim() : "";
+              // Resposta fora do escopo: sem botão de agendamento e sem
+              // chamada para marcar, mesmo que o modelo tenha escrito.
+              const foraDoEscopo =
+                !isUser && (semInformacao(raw) || somenteOfertaGenerica(raw));
               const hasButton =
                 !isUser &&
+                !foraDoEscopo &&
                 (raw.includes("[[AGENDAR") ||
                   raw.includes("sites.appbarber.com.br") ||
                   bookingIntent);
-              const cleaned = isUser
+              const cleanedBase = isUser
                 ? textoExibido(raw)
                 : raw
                     .replace(/\[\[AGENDAR(?::barber=[^\]]+)?\]\]/g, "")
                     .replace(/https:\/\/sites\.appbarber\.com\.br\/barbeariadoneyz-sqbc/g, "")
                     .replace(/\s+$/g, "");
+              const cleaned = foraDoEscopo
+                ? limparForaDoEscopo(cleanedBase)
+                : cleanedBase;
               const appbarberUrl = buildAppBarberUrl(barber);
               return (
                 <div

@@ -150,4 +150,53 @@ quebrava o chat de três formas:
 https://barbeariadoneyzito.base44.app (bundle publicado sem o bloco de
 diferenciais; regra 12b confirmada no agente remoto).
 
+---
+
+## Correção 5 — Pergunta fora do escopo: resposta curta e sem empurrão (FEITO)
+
+**Arquivos:** `base44/agents/consultor_neyzito.jsonc`,
+`src/components/ConsultorChat.jsx`
+
+**Sintoma:** ao perguntar "tem bolo?", o agente respondia:
+
+> Não temos informação sobre bolo no momento. O que temos é o bar com
+> bebidas para você aproveitar durante a visita. 💈
+>
+> Posso te ajudar com mais alguma coisa? Se quiser marcar, é só clicar no
+> botão abaixo. 👇
+
+Três defeitos numa resposta só: **upsell não pedido** ("o que temos é o bar"),
+**"no momento"** (promete disponibilidade futura) e **botão de agendamento** em
+uma pergunta sem relação.
+
+**Causa:** a regra 4 mandava *"responda primeiro à dúvida do cliente e só
+então apresente o agendamento"* — ou seja, **sempre**. Como a regra 12b (os
+diferenciais) estava no contexto do agente, ele usou o bar como substituto do
+bolo. E a heurística do frontend (`/é só clicar|clique no botão|…/`) ligava o
+botão mesmo sem o marcador `[[AGENDAR]]`.
+
+**O que mudou:**
+
+| Item | Antes | Depois |
+|---|---|---|
+| Regra 3 | — | remete à regra 16 para perguntas fora do escopo |
+| Regra 4 | agendamento **sempre** | agendamento só com intenção de agendar (regra 5) ou dúvida de serviço/preço/pagamento/equipe |
+| Regra 16 | não existia | **sem informação** → 1 frase curta, objetiva e profissional; sem inventar, sem substituto, sem "no momento", sem "posso te ajudar com mais alguma coisa?", sem `[[AGENDAR]]` |
+| Frontend | botão por heurística de texto | rede de segurança: resposta de "sem informação" **nunca** mostra o botão; a chamada de agendamento e o "no momento" são removidos do texto |
+| Resposta degenerada | "Posso te ajudar com mais alguma coisa?" e nada mais | cai na resposta padrão da regra 16 |
+
+**Resposta padrão para pergunta fora do escopo:**
+
+> Essa informação eu não tenho. Posso informar sobre serviços, horários e
+> equipe.
+
+**Testes:** `teste-fora-escopo.mjs` — 15 casos (a resposta real do bug, a
+resposta ideal, CTA indevido, marcador indevido, "no momento", preço com e sem
+URL, intenção de agendar, CTA isolado, diferenciais, serviços, horário,
+cadastro, WhatsApp, oferta genérica) — **0 falhas**.
+
+**Deploy:** `npx base44 deploy --build -y` → https://barbeariadoneyzito.base44.app
+(regra 16 e regra 4 alterada confirmadas no agente remoto via `agents pull`).
+
+
 
