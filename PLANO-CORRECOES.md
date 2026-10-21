@@ -1,9 +1,18 @@
 # Correções — Barbearia do Neyzito
 
-**Projeto original:** `6ac2d1562681ffc82d791d55`
-**Projeto clonado (novo):** `6ad7a401bdd9aca0b214c7b4` — https://barbearia-do-neyzito-copy-b214c7b4.base44.app
-**Agent:** `consultor_neyzito`
-**AppBarber:** https://sites.appbarber.com.br/barbeariadoneyz-sqbc
+## Contexto do projeto
+
+- **Cliente:** Barbearia do Neyzito
+- **Agência:** DZ Marketing Digital
+- **CEO / Responsável:** Doni Leite
+- **Instagram:** [@doni__leite](https://www.instagram.com/doni__leite/)
+- **Local:** São Paulo - SP
+- **Stack:** Vite + React + Tailwind + Base44 (entities, functions, agents)
+- **Projeto original:** `6ac2d1562681ffc82d791d55`
+- **Projeto clonado (novo):** `6ad7a401bdd9aca0b214c7b4` — https://barbearia-do-neyzito-copy-b214c7b4.base44.app
+- **Agent:** `consultor_neyzito`
+- **AppBarber:** https://sites.appbarber.com.br/barbeariadoneyz-sqbc
+- **Repositório Git:** inicializado (baseline `e79c56d`) — correções em `feature/paineis-admin` (branch ativa)
 
 ---
 
