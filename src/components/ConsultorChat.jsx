@@ -46,27 +46,26 @@ function contextoAquisicao() {
   return linhas.join("\n");
 }
 
-// Diferenciais da Barbearia do Neyzito — injetados para o agente citar
-// naturalmente quando perguntarem "por que escolher", vantagens ou comparações.
-// Não exibir este bloco ao usuário.
-function contextoDiferenciais() {
-  const linhas = [
-    "[Diferenciais da Barbearia do Neyzito — cite quando perguntarem por vantagens ou por que escolher]",
-    "- Estacionamento grátis na porta (2 vagas)",
-    "- Ambiente climatizado",
-    "- TV",
-    "- Música ambiente",
-    "- Bar com bebidas",
-    "- Wi-Fi grátis",
-    "- Decoração diferenciada e aconchegante",
-    "- Atendimento personalizado",
-    "- Qualidade nos detalhes",
-    "- Localização: Rua Clodomiro Amazonas, 1361 — Vila Nova Conceição, São Paulo/SP",
-    "- Agendamento online pelo AppBarber",
-    "- Mais de 9 anos de tradição (desde 2017)",
-    "Sempre dê destaque ao estacionamento grátis na porta quando fizer sentido.",
-  ];
-  return linhas.join("\n");
+// Blocos internos que o chat anexa à mensagem do usuário antes de enviá-la ao
+// agente: "[Referência temporal]" (hora de São Paulo) e "[Contexto de
+// aquisição]" (origem/UTM/sessão). São para o agente, nunca para o cliente —
+// por isso removemos só eles na hora de exibir. Nenhum outro conteúdo é
+// injetado na mensagem.
+const BLOCOS_INTERNOS =
+  /^\[Referência temporal[^\n]*\n\n(?:\[Contexto de aquisição[^\n]*\n(?:[^\n]*\n)*?\n)?/;
+
+// Texto que o cliente digitou, sem os blocos internos.
+function textoExibido(content) {
+  const txt = typeof content === "string" ? content : content ? JSON.stringify(content) : "";
+  return txt.replace(BLOCOS_INTERNOS, "");
+}
+
+// Limpa as mensagens do servidor uma única vez, ao recebê-las.
+function mensagensExibiveis(lista) {
+  return (lista || []).map((m) => {
+    if (!m || m.role !== "user") return m;
+    return { ...m, content: textoExibido(m.content) };
+  });
 }
 
 // Renderizadores customizados do Markdown para uma leitura premium no celular.
@@ -127,8 +126,31 @@ export default function ConsultorChat() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [starting, setStarting] = useState(false);
+  const [aviso, setAviso] = useState("");
   const scrollRef = useRef(null);
   const inputRef = useRef(null);
+  const convRef = useRef(null);
+  const unsubRef = useRef(null);
+  const mountedRef = useRef(true);
+  const loadingTimerRef = useRef(null);
+
+  // Indicador de "digitando". O timer evita que o chat fique travado em
+  // loading quando o agente não responde (falha da API ou timeout do modelo).
+  const iniciarLoading = () => {
+    setLoading(true);
+    clearTimeout(loadingTimerRef.current);
+    loadingTimerRef.current = setTimeout(() => {
+      setLoading(false);
+      setAviso("Estou demorando um pouco para responder. Se não aparecer, mande novamente.");
+    }, 60000);
+  };
+
+  const finalizarLoading = () => {
+    clearTimeout(loadingTimerRef.current);
+    loadingTimerRef.current = null;
+    setLoading(false);
+  };
+
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -136,9 +158,12 @@ export default function ConsultorChat() {
     }
   }, [messages, loading]);
 
+  // Cria a conversa uma única vez e assina as atualizações em tempo real.
+  // A assinatura fica ativa enquanto o componente existir (fechar o chat não
+  // encerra a conversa) e é cancelada no unmount, para não vazar WebSocket.
   useEffect(() => {
-    if (!open || conversation || starting) return;
-    let unsub = () => {};
+    if (!open || convRef.current) return;
+    let cancelado = false;
     setStarting(true);
     (async () => {
       try {
@@ -146,97 +171,48 @@ export default function ConsultorChat() {
           agent_name: AGENT_NAME,
           metadata: { name: "Consultor Neyzito", campaign: getCampaignContext() },
         });
+        if (cancelado || !mountedRef.current) return;
+        convRef.current = conv;
         setConversation(conv);
-        const cleanedInit = (conv.messages || [])
-          .map((m) => {
-            const txt = typeof m.content === "string" ? m.content : JSON.stringify(m.content || "");
-            if (!txt) return m;
-            if (txt.toLowerCase().includes("diferenciais da barbearia do neyzito")) {
-              if (m.role === "user") {
-                const lines = txt.split(/\r?\n/);
-                for (let i = lines.length - 1; i >= 0; i--) {
-                  const line = lines[i].trim();
-                  if (!line) continue;
-                  if (line.startsWith("-")) continue;
-                  if (line.toLowerCase().includes("diferenciais")) continue;
-                  if (line.toLowerCase().includes("estacionamento")) continue;
-                  if (line.toLowerCase().includes("ambiente climatizado")) continue;
-                  if (line.toLowerCase().includes("vila nova conceição")) continue;
-                  if (line.toLowerCase().includes("appbarber")) continue;
-                  if (line.toLowerCase().includes("desde 2017")) continue;
-                  if (line.toLowerCase().includes("sempre dê destaque")) continue;
-                  if (line.toLowerCase().includes("qualidade nos detalhes")) continue;
-                  if (line.toLowerCase().includes("música ambiente")) continue;
-                  if (line.toLowerCase().includes("bar com bebidas")) continue;
-                  if (line.toLowerCase().includes("wi-fi")) continue;
-                  if (line.toLowerCase().includes("decoração diferenciada")) continue;
-                  if (line.toLowerCase().includes("atendimento personalizado")) continue;
-                  if (line.toLowerCase().includes("climatizado")) continue;
-                  if (line.toLowerCase().includes("tradição")) continue;
-                  return { ...m, content: line };
-                }
-                return null;
-              }
-              return null;
-            }
-            return m;
-          })
-          .filter(Boolean);
-        setMessages(cleanedInit);
-        unsub = base44.agents.subscribeToConversation(conv.id, (data) => {
-          const cleaned = (data.messages || [])
-            .map((m) => {
-              const txt = typeof m.content === "string" ? m.content : JSON.stringify(m.content || "");
-              if (!txt) return m;
-              if (txt.toLowerCase().includes("diferenciais da barbearia do neyzito")) {
-                if (m.role === "user") {
-                  const lines = txt.split(/\r?\n/);
-                  for (let i = lines.length - 1; i >= 0; i--) {
-                    const line = lines[i].trim();
-                    if (!line) continue;
-                    if (line.startsWith("-")) continue;
-                    if (line.toLowerCase().includes("diferenciais")) continue;
-                    if (line.toLowerCase().includes("estacionamento")) continue;
-                    if (line.toLowerCase().includes("ambiente climatizado")) continue;
-                    if (line.toLowerCase().includes("vila nova conceição")) continue;
-                    if (line.toLowerCase().includes("appbarber")) continue;
-                    if (line.toLowerCase().includes("desde 2017")) continue;
-                    if (line.toLowerCase().includes("sempre dê destaque")) continue;
-                    if (line.toLowerCase().includes("qualidade nos detalhes")) continue;
-                    if (line.toLowerCase().includes("música ambiente")) continue;
-                    if (line.toLowerCase().includes("bar com bebidas")) continue;
-                    if (line.toLowerCase().includes("wi-fi")) continue;
-                    if (line.toLowerCase().includes("decoração diferenciada")) continue;
-                    if (line.toLowerCase().includes("atendimento personalizado")) continue;
-                    if (line.toLowerCase().includes("climatizado")) continue;
-                    if (line.toLowerCase().includes("tradição")) continue;
-                    return { ...m, content: line };
-                  }
-                  return null;
-                }
-                return null;
-              }
-              return m;
-            })
-            .filter(Boolean);
-          setMessages(cleaned);
-          setLoading(false);
+        setMessages(mensagensExibiveis(conv.messages));
+        unsubRef.current = base44.agents.subscribeToConversation(conv.id, (data) => {
+          if (!mountedRef.current) return;
+          setMessages(mensagensExibiveis(data.messages));
+          finalizarLoading();
         });
       } catch (e) {
         console.error("Erro ao iniciar conversa:", e);
+        if (mountedRef.current) {
+          setAviso("Não consegui iniciar a conversa. Tente novamente em instantes.");
+        }
       } finally {
-        setStarting(false);
+        if (mountedRef.current) setStarting(false);
       }
     })();
-    return () => unsub();
-  }, [open, conversation, starting]);
+    return () => {
+      cancelado = true;
+    };
+  }, [open]);
+
+  // Marca o componente como montado e cancela a assinatura no unmount,
+  // evitando WebSocket aberto e setState em componente desmontado.
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      unsubRef.current?.();
+      unsubRef.current = null;
+    };
+  }, []);
+
 
   const send = async () => {
     const text = input.trim();
     if (!text || !conversation || loading) return;
     setInput("");
+    setAviso("");
     trackChatInteraction();
-    setLoading(true);
+    iniciarLoading();
     setMessages((prev) => [...prev, { role: "user", content: text }]);
     try {
       // Injeta a hora atual de São Paulo no contexto enviado ao agente (não
@@ -247,16 +223,25 @@ export default function ConsultorChat() {
       // Repassa também o contexto de aquisição (origem/UTM/referrer/sessão) para
       // o agente enviar à criarLead e o lead nascer com a origem correta.
       const aquisicao = contextoAquisicao();
-      const diferenciais = contextoDiferenciais();
       await base44.agents.addMessage(conversation, {
         role: "user",
-        content: `${contexto}\n\n${aquisicao}\n\n${diferenciais}\n\n${text}`,
+        content: `${contexto}\n\n${aquisicao}\n\n${text}`,
       });
     } catch (e) {
       console.error(e);
-      setLoading(false);
+      finalizarLoading();
+      // Desfaz a mensagem otimista e devolve o texto ao campo, para o cliente
+      // não perder o que escreveu.
+      setMessages((prev) => {
+        const last = prev[prev.length - 1];
+        if (last && last.role === "user" && last.content === text) return prev.slice(0, -1);
+        return prev;
+      });
+      setInput(text);
+      setAviso("Não consegui enviar sua mensagem. Tente novamente.");
     }
   };
+
 
   return (
     <>
@@ -315,45 +300,17 @@ export default function ConsultorChat() {
               </div>
             )}
 
+            {aviso && (
+              <div className="flex justify-center">
+                <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[12.5px] text-amber-200 text-center">
+                  {aviso}
+                </div>
+              </div>
+            )}
+
             {messages.map((m, i) => {
               const raw = m.content || "";
-              const rawStr = typeof raw === "string" ? raw : JSON.stringify(raw);
-              
-              // Bloqueia qualquer mensagem com o bloco de diferenciais
-              if (rawStr.toLowerCase().includes("diferenciais da barbearia do neyzito")) {
-                if (m.role === "user") {
-                  const lines = rawStr.split(/\r?\n/);
-                  for (let j = lines.length - 1; j >= 0; j--) {
-                    const line = lines[j].trim();
-                    if (!line) continue;
-                    if (line.startsWith("-")) continue;
-                    if (line.toLowerCase().includes("diferenciais")) continue;
-                    if (line.toLowerCase().includes("estacionamento")) continue;
-                    if (line.toLowerCase().includes("ambiente climatizado")) continue;
-                    if (line.toLowerCase().includes("vila nova conceição")) continue;
-                    if (line.toLowerCase().includes("appbarber")) continue;
-                    if (line.toLowerCase().includes("desde 2017")) continue;
-                    if (line.toLowerCase().includes("sempre dê destaque")) continue;
-                    if (line.toLowerCase().includes("qualidade nos detalhes")) continue;
-                    if (line.toLowerCase().includes("música ambiente")) continue;
-                    if (line.toLowerCase().includes("bar com bebidas")) continue;
-                    if (line.toLowerCase().includes("wi-fi")) continue;
-                    if (line.toLowerCase().includes("decoração diferenciada")) continue;
-                    if (line.toLowerCase().includes("atendimento personalizado")) continue;
-                    if (line.toLowerCase().includes("climatizado")) continue;
-                    if (line.toLowerCase().includes("tradição")) continue;
-                    // Usa apenas a linha da pergunta
-                    m = { ...m, content: line };
-                    break;
-                  }
-                  if (typeof m.content === "string" && m.content.toLowerCase().includes("diferenciais da barbearia do neyzito")) {
-                    return null;
-                  }
-                } else {
-                  return null;
-                }
-              }
-              
+
               const isUser = m.role === "user";
               const bookingIntent =
                 /botão abaixo|clique no botão|clique abaixo|é só clicar|escolher (seu |o )?horário|vamos marcar|quer agendar/i.test(
@@ -367,9 +324,7 @@ export default function ConsultorChat() {
                   raw.includes("sites.appbarber.com.br") ||
                   bookingIntent);
               const cleaned = isUser
-                ? raw
-                    .replace(/^\[Referência temporal[^\n]*\n\n/, "")
-                    .replace(/^\[Contexto de aquisição[^\n]*\n(?:[^\n]*\n)*?\n/, "")
+                ? textoExibido(raw)
                 : raw
                     .replace(/\[\[AGENDAR(?::barber=[^\]]+)?\]\]/g, "")
                     .replace(/https:\/\/sites\.appbarber\.com\.br\/barbeariadoneyz-sqbc/g, "")
