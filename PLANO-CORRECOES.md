@@ -95,13 +95,13 @@ inflaria a métrica. Ajustes para não distorcer o painel:
 
 ## Como publicar as mudanças
 
-O diretório local está vinculado ao projeto **clone** (`6ad7a401bdd9aca0b214c7b4`,
-criado pelo eject). Para publicar no **projeto original** (`6ac2d1562681ffc82d791d55`),
-rode o deploy apontando para ele:
+O diretório local está vinculado ao app **original** (`6ac2d1562681ffc82d791d55`),
+conforme `base44/.app.jsonc`. O CLI atual (0.1.32) não tem a flag `--app-id`:
+o alvo do deploy vem sempre do vínculo local. Para publicar:
 
 ```powershell
 cd C:\Users\dzmkt\barbearia-do-neyzito
-npx base44 deploy --app-id 6ac2d1562681ffc82d791d55
+npx base44 deploy --build -y
 ```
 
 Isso envia as 6 entidades, as 2 funções (registrarAnalytics + criarLead),
@@ -115,4 +115,39 @@ o agent atualizado e o site para o app em produção.
 4. Informar nome e WhatsApp → o lead deve aparecer no painel de Leads
 5. Rolar a página → no painel de Métricas, a jornada deve mostrar as seções
    vistas e os marcos de scroll (sem inflar a contagem de visitas)
+
+---
+
+## Correção 4 — Chat: bloco de diferenciais removido (FEITO)
+
+**Arquivos:** `src/components/ConsultorChat.jsx`,
+`base44/agents/consultor_neyzito.jsonc`
+
+**Causa:** o bloco de diferenciais era injetado em **toda** mensagem do
+usuário e "escondido" por 3 cópias de uma blacklist de palavras. Isso
+quebrava o chat de três formas:
+
+- a blacklist substituía a mensagem do cliente por uma linha interna
+  (`consentimento_marketing: ...`) sempre que a pergunta continha uma das
+  palavras bloqueadas — "estacionamento", "appbarber", "climatizado",
+  "wi-fi", "tradição", "bar com bebidas", "atendimento personalizado"…
+- a resposta do agente era descartada (`return null`) se citasse
+  "Diferenciais da Barbearia do Neyzito"
+- o bloco entrava no histórico do agente a cada mensagem, favorecendo o caso acima
+
+**O que mudou:**
+
+| Item | Antes | Depois |
+|---|---|---|
+| Injeção no frontend | bloco de diferenciais em toda mensagem | nenhuma (restam só `[Referência temporal]` e `[Contexto de aquisição]`) |
+| Limpeza do texto | 3 cópias da blacklist (~150 linhas) | 1 função `textoExibido()`, aplicada uma única vez |
+| Conhecimento dos diferenciais | injetado por mensagem | regra **12b** nas *instructions* do agente |
+| Subscription do WebSocket | nunca cancelada (deps do `useEffect`) | cancelada no unmount |
+| Indicador "digitando" | travava para sempre se o agente falhasse | timeout de 60s + aviso na tela |
+| Falha ao enviar | o texto digitado era perdido | o texto volta ao campo |
+
+**Deploy:** `npx base44 deploy --build -y` →
+https://barbeariadoneyzito.base44.app (bundle publicado sem o bloco de
+diferenciais; regra 12b confirmada no agente remoto).
+
 
