@@ -57,7 +57,7 @@ export default function ImportarAppBarber({
     try {
       // Ids já importados antes, para não duplicar em reimportações.
       const existentes = await base44.entities.Leads
-        .list("-created_date", 1000)
+        .list("-created_date", 2000)
         .catch(() => []);
       const ids = new Set((existentes || []).map((l) => l.id_externo).filter(Boolean));
       const a = analisarCSV(texto, ids);
