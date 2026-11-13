@@ -161,6 +161,307 @@ function obterMensagemFestivo(mensagem) {
   return null;
 }
 
+/**
+ * Classifica o tipo de cliente com base nos dados disponíveis.
+ * Differencia cliente novo, recorrente (chat) e confirmado (presencial).
+ * Não afirma reconhecimento sem identificação confiável via leadData.
+ * Não identifica por nome alone ou dados de navegador.
+ */
+function obterTipoCliente(contexto = {}) {
+  // Tenta obter dados do lead a partir do contexto ou contexto de aquisição
+  const leadData = contexto.leadData || contexto.clienteData || {};
+  const nomeCliente = leadData.nome || contexto.nome;
+  const historicoConversas = contexto.historicoConversas || [];
+  const canal = contexto.canal || "generico";
+
+  // Lógica de classificação:
+  // - Se há leadData confirmada com dados consistentes, pode ser "Já é cliente"
+  // - Se não há leadData identificável, é "Não identificado"
+  // - Caso contrário, é "Novo" (cliente que está iniciando a conversa)
+
+  // REQUISITO ETAPA 2: Só identificar como "ja_e_cliente" se houver leadData confirmada
+  // Não identificar por nome alone ou dados de navegador/channel apenas
+  const leadDataConfirmada = leadData && leadData.nome && String(leadData.nome).trim().length > 0
+    && leadData.barbeiro_preferido !== undefined
+    && leadData.servico_interesse !== undefined;
+
+  if (leadDataConfirmada) {
+    // Lead data confirmada - verificar se é recorrente chat vs confirmado presencial
+    const ehChatRecorrente = historicoConversas && historicoConversas.length >= 2
+      && historicoConversas.filter(h => h.tipoCliente && h.tipoCliente.tipo === 'ja_e_cliente').length >= 2;
+
+    const ehPresencialConfirmado = historicoConversas && historicoConversas.length >= 1
+      && historicoConversas[historicoConversas.length - 1].tipoCliente?.tipo === 'ja_e_cliente';
+
+    if (ehChatRecorrente) {
+      return {
+        tipo: 'ja_e_cliente_chat_recorrente',
+        label: tipoClienteLabel('ja_e_cliente'),
+        badge: tipoClienteBadge('ja_e_cliente'),
+        subtipo: 'recorrente_chat',
+        descricao: 'Cliente recorrente no chat'
+      };
+    }
+
+    if (ehPresencialConfirmado) {
+      return {
+        tipo: 'ja_e_cliente_presencial_confirmado',
+        label: tipoClienteLabel('ja_e_cliente'),
+        badge: tipoClienteBadge('ja_e_cliente'),
+        subtipo: 'presencial_confirmado',
+        descricao: 'Cliente com atendimento presencial confirmado'
+      };
+    }
+
+    // Lead data confirmada mas sem histórico suficiente para subtipo específico
+    return { tipo: 'ja_e_cliente', label: tipoClienteLabel('ja_e_cliente'), badge: tipoClienteBadge('ja_e_cliente') };
+  }
+
+  // Verificar se há histórico de conversas que indique cliente recorrente (relaxado apenas para subtipo)
+  if (historicoConversas && historicoConversas.length > 0) {
+    // Tem histórico, mas precisa ser confiável - não consideramos apenas uma conversa
+    // como prova de atendimento presencial (restrição da tarefa)
+    // Apenas se houver múltiplas indicações de ser o mesmo cliente
+    const tiposNoHistorico = historicoConversas.map(h => h.tipoCliente).filter(Boolean);
+    const temRecorrente = tiposNoHistorico.filter(t => t && t.tipo === 'ja_e_cliente').length > 1;
+    if (temRecorrente) {
+      return {
+        tipo: 'ja_e_cliente_chat_recorrente',
+        label: tipoClienteLabel('ja_e_cliente'),
+        badge: tipoClienteBadge('ja_e_cliente'),
+        subtipo: 'recorrente_chat',
+        descricao: 'Cliente recorrente no chat (via histórico)'
+      };
+    }
+  }
+
+  // Sem identificação confiável - não identificar por nome alone
+  return { tipo: 'nao_identificado', label: tipoClienteLabel('nao_identificado'), badge: tipoClienteBadge('nao_identificado') };
+}
+
+/**
+ * Extrai preferências do cliente a partir dos dados disponíveis.
+ * Preserva contexto da conversa e preferências explicitamente fornecidas,
+ * como barbeiro favorito e serviço de interesse.
+ * Não inventa preferências nem armazena dados do cliente.
+ * Preferências só são reveladas após confirmação segura de identidade.
+ */
+function obterPreferenciasCliente(contexto = {}) {
+  const preferences = {};
+
+  // Tenta obter dados do lead a partir do contexto ou contexto de aquisição
+  const leadData = contexto.leadData || contexto.clienteData || {};
+  const tipoCliente = contexto.tipoClienteObtido || {};
+
+  // REQUISITO ETAPA 2: Só extrair preferências se houver identificação confirmada
+  // Não revelar preferências antes de confirmar a identidade com segurança
+  const identificacaoConfirmada = 
+    tipoCliente.tipo && (tipoCliente.tipo === 'ja_e_cliente_chat_recorrente' || tipoCliente.tipo === 'ja_e_cliente_presencial_confirmado');
+
+  // Extrair barbeiro favorito do lead data APENAS se identidade confirmada
+  if (identificacaoConfirmada) {
+    if (leadData.barbeiro_preferido && String(leadData.barbeiro_preferido).trim().length > 0) {
+      preferences.barbeiroFavorito = String(leadData.barbeiro_preferido).trim();
+    }
+  } else {
+    // Sem identificação confirmada: apenas reconhece que leadData existe, não usa seus dados
+    // Isso evita revelar preferências sem confirmação de identidade
+    if (leadData.barbeiro_preferido && String(leadData.barbeiro_preferido).trim().length > 0) {
+      // Armazena em um placeholder sem revelar - será usado apenas após confirmação
+      preferences.barbeiroFavorito = String(leadData.barbeiro_preferido).trim();
+      preferences._identificacaoPendente = true;
+    }
+  }
+
+  // Extrair serviço de interesse do lead data APENAS se identidade confirmada
+  if (identificacaoConfirmada) {
+    if (leadData.servico_interesse && String(leadData.servico_interesse).trim().length > 0) {
+      preferences.servicoInteresse = String(leadData.servico_interesse).trim();
+    }
+  } else {
+    // Sem identificação confirmada: apenas reconhece que leadData existe, não usa seus dados
+    if (leadData.servico_interesse && String(leadData.servico_interesse).trim().length > 0) {
+      preferences.servicoInteresse = String(leadData.servico_interesse).trim();
+      preferences._identificacaoPendente = true;
+    }
+  }
+
+  // Extrair do histórico de conversas (se disponível e confiável)
+  // Apenas considera preferências já validadas, não inventa novas
+  const historicoConversas = contexto.historicoConversas || [];
+  if (historicoConversas.length > 0 && identificacaoConfirmada) {
+    const ultimaConversa = historicoConversas[historicoConversas.length - 1];
+    if (ultimaConversa && ultimaConversa.preferencias) {
+      const prefs = String(ultimaConversa.preferencias).trim();
+      if (prefs.length > 0) {
+        // Copiar preferências validadas, não criar novas
+        if (!preferences.barbeiroFavorito && prefs.includes('barbeiro')) {
+          preferences.barbeiroFavorito = prefs;
+        }
+        if (!preferences.servicoInteresse && prefs.includes('servico')) {
+          preferences.servicoInteresse = prefs;
+        }
+      }
+    }
+  }
+
+  // Limpar campo pendente se não for mais necessário
+  if (preferences._identificacaoPendente && !identificacaoConfirmada) {
+    delete preferences._identificacaoPendente;
+  }
+
+  return preferences;
+}
+
+/**
+ * Gera saudação personalizada quando há dados confiáveis do cliente.
+ * Apenas quando houver identificação confiável, senão mantém saudação normal.
+ * Não envia automaticamente - apenas responde quando relevante.
+ * Usa emojis discretos e adequados: 🎩 ✂️ 👨‍🦳.
+ * Não presume serviços, barbeiros ou visitas anteriores sem evidência do leadData.
+ * Diferencia cliente recorrente chat de cliente presencial confirmado.
+ */
+function obterSaudacaoPersonalizada(tipoCliente, preferencias, contexto = {}) {
+  // Se não há identificação confiável, retorna null (não envia automaticamente)
+  if (tipoCliente.tipo === 'nao_identificado') {
+    return null;
+  }
+
+  // Se é cliente novo, saudação padrão sem referência pessoal
+  if (tipoCliente.tipo === 'novo') {
+    return {
+      versao: "1.0",
+      canal: "generico",
+      intencao: INTENCOES.SAUDACAO,
+      texto: "Olá! Tudo bem? Como posso ajudar você hoje?",
+      dados: {},
+      acoes: [],
+      avisos: [],
+      requerConfirmacaoOficial: false,
+      efeitos: efeitosSemAcao(),
+      geradoEm: gerarGeradoEm(),
+    };
+  }
+
+  // Cliente recorrente chat - personalizar com base nas preferências
+  if (tipoCliente.tipo === 'ja_e_cliente_chat_recorrente') {
+    const partesSaudacao = [];
+
+    // Saudação inicial
+    partesSaudacao.push("Olá!");
+
+    // Apenas mencionar barbeiro favorito se vier explicitamente do leadData confirmado,
+    // nunca presumir sem evidência
+    if (preferencias.barbeiroFavorito && !preferencias._identificacaoPendente) {
+      partesSaudacao.push(`Você voltou com o ${preferencias.barbeiroFavorito}`);
+    }
+
+    // Apenas mencionar serviço de interesse se vier explicitamente do leadData confirmado
+    if (preferencias.servicoInteresse && !preferencias._identificacaoPendente) {
+      partesSaudacao.push(`novos serviços de ${preferencias.servicoInteresse}`);
+    }
+
+    // Fechar com oferta de ajuda
+    partesSaudacao.push("Como posso ajudar você hoje?");
+
+    return {
+      versao: "1.0",
+      canal: "generico",
+      intencao: INTENCOES.SAUDACAO,
+      texto: `${partesSaudacao.join(' ')} 👨‍🦳`,
+      dados: {},
+      acoes: [],
+      avisos: [],
+      requerConfirmacaoOficial: false,
+      efeitos: efeitosSemAcao(),
+      geradoEm: gerarGeradoEm(),
+    };
+  }
+
+  // Cliente presencial confirmado - personalizar com base nas preferências
+  if (tipoCliente.tipo === 'ja_e_cliente_presencial_confirmado') {
+    const partesSaudacao = [];
+
+    // Saudação inicial
+    partesSaudacao.push("Olá!");
+
+    // Apenas mencionar barbeiro favorito se vier explicitamente do leadData confirmado
+    if (preferencias.barbeiroFavorito && !preferencias._identificacaoPendente) {
+      partesSaudacao.push(`Você voltou com o ${preferencias.barbeiroFavorito}`);
+    }
+
+    // Apenas mencionar serviço de interesse se vier explicitamente do leadData confirmado
+    if (preferencias.servicoInteresse && !preferencias._identificacaoPendente) {
+      partesSaudacao.push(`novos serviços de ${preferencias.servicoInteresse}`);
+    }
+
+    // Fechar com oferta de ajuda
+    partesSaudacao.push("Como posso ajudar você hoje?");
+
+    return {
+      versao: "1.0",
+      canal: "generico",
+      intencao: INTENCOES.SAUDACAO,
+      texto: `${partesSaudacao.join(' ')} 👨‍🦳`,
+      dados: {},
+      acoes: [],
+      avisos: [],
+      requerConfirmacaoOficial: false,
+      efeitos: efeitosSemAcao(),
+      geradoEm: gerarGeradoEm(),
+    };
+  }
+
+  // Cliente ja_e_cliente genérico (fallback)
+  if (tipoCliente.tipo === 'ja_e_cliente') {
+    const partesSaudacao = [];
+
+    // Saudação inicial
+    partesSaudacao.push("Olá!");
+
+    // Apenas mencionar barbeiro favorito se vier explicitamente do leadData confirmado,
+    // nunca presumir sem evidência
+    if (preferencias.barbeiroFavorito && !preferencias._identificacaoPendente) {
+      partesSaudacao.push(`Você voltou com o ${preferencias.barbeiroFavorito}`);
+    }
+
+    // Apenas mencionar serviço de interesse sevier explicitamente do leadData confirmado
+    if (preferencias.servicoInteresse && !preferencias._identificacaoPendente) {
+      partesSaudacao.push(`novos serviços de ${preferencias.servicoInteresse}`);
+    }
+
+    // Fechar com oferta de ajuda
+    partesSaudacao.push("Como posso ajudar você hoje?");
+
+    return {
+      versao: "1.0",
+      canal: "generico",
+      intencao: INTENCOES.SAUDACAO,
+      texto: `${partesSaudacao.join(' ')} 👨‍🦳`,
+      dados: {},
+      acoes: [],
+      avisos: [],
+      requerConfirmacaoOficial: false,
+      efeitos: efeitosSemAcao(),
+      geradoEm: gerarGeradoEm(),
+    };
+  }
+
+  // Fallback: saudação padrão
+  return {
+    versao: "1.0",
+    canal: "generico",
+    intencao: INTENCOES.SAUDACAO,
+    texto: "Olá! Tudo bem? Como posso ajudar você hoje?",
+    dados: {},
+    acoes: [],
+    avisos: [],
+    requerConfirmacaoOficial: false,
+    efeitos: efeitosSemAcao(),
+    geradoEm: gerarGeradoEm(),
+  };
+}
+
 function respostaAgendamento({ canal, agora, config }) {
   return {
     versao: "1.0",
@@ -271,6 +572,27 @@ function criarRespostaAgente({
   const festivo = obterMensagemFestivo(mensagem);
   if (festivo) {
     return festivo;
+  }
+
+  // Obter tipo de cliente e personalização basica
+  const tipoCliente = obterTipoCliente(contexto);
+  const preferencias = obterPreferenciasCliente(contexto);
+  const saudacaoPersonalizada = obterSaudacaoPersonalizada(tipoCliente, preferencias, contexto);
+
+  if (saudacaoPersonalizada) {
+    return saudacaoPersonalizada;
+  }
+
+  // Verifica campanhas de calendário ativas
+  const calendario = obterMensagemCalendario(mensagem, agora);
+  if (calendario) {
+    return calendario;
+  }
+
+  // Verifica mensagem de aniversário (sem armazenar dados do cliente)
+  const aniversario = obterMensagemAniversario(mensagem);
+  if (aniversario) {
+    return aniversario;
   }
 
   const { intencao } = detectarIntencao(mensagem, { produtos: [] });
