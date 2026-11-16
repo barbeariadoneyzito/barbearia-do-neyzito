@@ -320,6 +320,8 @@ function obterPreferenciasCliente(contexto = {}) {
  * Usa emojis discretos e adequados: 🎩 ✂️ 👨‍🦳.
  * Não presume serviços, barbeiros ou visitas anteriores sem evidência do leadData.
  * Diferencia cliente recorrente chat de cliente presencial confirmado.
+ * Utiliza o primeiro nome quando disponível no contexto, sem tratar como confirmação de identidade.
+ * Cumprimenta naturalmente e pergunta como pode chamar quando o nome ainda não foi informado.
  */
 function obterSaudacaoPersonalizada(tipoCliente, preferencias, contexto = {}) {
   // Se não há identificação confiável, retorna null (não envia automaticamente)
@@ -327,13 +329,34 @@ function obterSaudacaoPersonalizada(tipoCliente, preferencias, contexto = {}) {
     return null;
   }
 
+  // Extrai o primeiro nome do contexto quando disponível (não é confirmação de identidade,
+  // apenas uso cortês na saudação; identificação segura requer leadData confirmada)
+  const nomeContexto = contexto.nome;
+  const primeiroNome = nomeContexto ? String(nomeContexto).trim().split(' ')[0] : null;
+
   // Se é cliente novo, saudação padrão sem referência pessoal
   if (tipoCliente.tipo === 'novo') {
+    // Se já tem nome na conversa, usa naturalmente sem perguntar novamente
+    if (primeiroNome) {
+      return {
+        versao: "1.0",
+        canal: "generico",
+        intencao: INTENCOES.SAUDACAO,
+        texto: `Olá, ${primeiroNome}! Tudo bem? Como posso ajudar você hoje?`,
+        dados: {},
+        acoes: [],
+        avisos: [],
+        requerConfirmacaoOficial: false,
+        efeitos: efeitosSemAcao(),
+        geradoEm: gerarGeradoEm(),
+      };
+    }
+    // Sem nome informado: cumprimentar naturalmente e perguntar como pode chamar
     return {
       versao: "1.0",
       canal: "generico",
       intencao: INTENCOES.SAUDACAO,
-      texto: "Olá! Tudo bem? Como posso ajudar você hoje?",
+      texto: "Olá! Como posso chamar você? Tudo bem? Como posso ajudar você hoje?",
       dados: {},
       acoes: [],
       avisos: [],

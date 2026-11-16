@@ -12,14 +12,16 @@ import { assistenteComercialAtivo } from "./featureFlag";
  * Ações explícitas da landing. O adaptador apenas informa a ação; nada é aberto
  * sem o clique do visitante.
  *
- * O agendamento abre o modal local de captação; o modal só direciona ao
- * AppBarber oficial e não cria, confirma ou inventa horário. O WhatsApp continua
- * usando a configuração do site e não é aberto automaticamente.
+ * No fluxo do assistente, agendamento abre o AppBarber oficial diretamente.
+ * Modal só direciona ao AppBarber e não cria reserva.
+ * WhatsApp usa a configuração do site e não é aberto automaticamente.
  */
 export function executarAcaoAssistenteComercial(acao) {
   if (acao?.tipo === "abrir_agendamento") {
     trackCta("appbarber", "assistente-comercial");
-    abrirAgendarModal("assistente-comercial");
+    if (typeof window !== "undefined") {
+      window.open(acao.url ?? "https://sites.appbarber.com.br/barbeariadoneyz-sqbc", "_blank", "noopener,noreferrer");
+    }
     return;
   }
 
